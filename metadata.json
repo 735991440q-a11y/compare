@@ -1,0 +1,5 @@
+{
+  "name": "Contract Diff Pro",
+  "description": "High-precision contract comparison tool supporting Word and PDF, with table extraction and side-by-side visual diffing.",
+  "requestFramePermissions": []
+}
