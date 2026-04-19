@@ -129,8 +129,28 @@ export async function parseImageOcr(file: File): Promise<ExtractedContent> {
 }
 
 /**
- * Normalizes content for comparison by removing excessive whitespace and standardizing line breaks.
+ * Normalizes content for comparison:
+ * 1. Removes spaces between Chinese characters (common OCR/PDF layout issue)
+ * 2. Collapses multiple spaces and newlines
+ * 3. Standardizes punctuation spacing
  */
 export function normalizeForDiff(text: string): string {
-  return text.trim().split('\n').map(line => line.trim()).filter(Boolean).join('\n');
+  if (!text) return '';
+  
+  return text
+    // Remove various invisible/special whitespace characters
+    .replace(/[\u00A0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000\ufeff]/g, ' ')
+    // Fix spaces between Chinese characters: "合 同" -> "合同"
+    .replace(/([\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])/g, '$1')
+    // Fix spaces between Chinese characters and common punctuation
+    .replace(/([\u4e00-\u9fa5])\s+([，。！？；：、‘’“”【】（）])/g, '$1$2')
+    .replace(/([，。！？；：、‘’“”【】（）])\s+([\u4e00-\u9fa5])/g, '$1$2')
+    // Handle line breaks and trim
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    // Eliminate large blanks (empty lines)
+    .filter(line => line.length > 0)
+    // Consolidate multiple spaces inside a line
+    .map(line => line.replace(/\s{2,}/g, ' '))
+    .join('\n');
 }
