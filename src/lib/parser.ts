@@ -138,19 +138,29 @@ export function normalizeForDiff(text: string): string {
   if (!text) return '';
   
   return text
-    // Remove various invisible/special whitespace characters
+    // 1. 统一特殊空白字符为普通空格
     .replace(/[\u00A0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000\ufeff]/g, ' ')
-    // Fix spaces between Chinese characters: "合 同" -> "合同"
+    // 2. 清除目录中的点号串、虚线串（目录引导点）
+    .replace(/\.{2,}/g, '')
+    .replace(/·{2,}/g, '')
+    .replace(/_{2,}/g, '')
+    // 3. 处理中文字符间的多余空格
     .replace(/([\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])/g, '$1')
-    // Fix spaces between Chinese characters and common punctuation
     .replace(/([\u4e00-\u9fa5])\s+([，。！？；：、‘’“”【】（）])/g, '$1$2')
     .replace(/([，。！？；：、‘’“”【】（）])\s+([\u4e00-\u9fa5])/g, '$1$2')
-    // Handle line breaks and trim
-    .split(/\r?\n/)
+    // 4. 按行拆分，深度清洗
+    .split(/[\r\n\f]+/) // 包含处理换页符 \f
     .map(line => line.trim())
-    // Eliminate large blanks (empty lines)
-    .filter(line => line.length > 0)
-    // Consolidate multiple spaces inside a line
+    .filter(line => {
+      // 过滤掉仅由符号或页码组成的干扰行
+      if (line.length === 0) return false;
+      // 过滤掉纯数字行（通常是页码）
+      if (/^\d+$/.test(line)) return false;
+      // 过滤掉只有简单符号的行
+      if (/^[\.\-·_]+$/.test(line)) return false;
+      return true;
+    })
+    // 5. 压缩行内连续空格并重新合并
     .map(line => line.replace(/\s{2,}/g, ' '))
     .join('\n');
 }
