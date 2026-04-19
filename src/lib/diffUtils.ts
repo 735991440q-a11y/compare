@@ -1,16 +1,24 @@
 import compareTwoStrings from 'string-similarity-js';
 
+/**
+ * 清洁文本用于相似度比对：移除所有非语义噪点
+ */
+function cleanForComparison(text: string): string {
+  if (!text) return "";
+  // 移除所有标点、空格、特殊符号，只保留中文字符、字母和数字
+  return text.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+}
+
 function getAnchor(text: string): string | null {
   if (!text) return null;
-  // 匹配：第一节, 1.1, 一、, 第21条 等
   const match = text.match(/^(第[一二三四五六七八九十百\d]+[条章节]|[\d\.]+[\s、\.]|[一二三四五六七八九十]+[、\s])/);
   return match ? match[0].trim() : null;
 }
 
 /**
- * Aligns two sets of string blocks (paragraphs/lines) using a fuzzy similarity threshold.
+ * 语义级对齐算法：支持模糊对齐和全局锚点锁定
  */
-export function alignSemanticBlocks(textA: string, textB: string, threshold = 0.7): { alignedA: string, alignedB: string } {
+export function alignSemanticBlocks(textA: string, textB: string, threshold = 0.8): { alignedA: string, alignedB: string } {
   const blocksA = textA.split('\n');
   const blocksB = textB.split('\n');
   
@@ -25,74 +33,71 @@ export function alignSemanticBlocks(textA: string, textB: string, threshold = 0.
     const blockB = blocksB[j] || "";
 
     if (i < blocksA.length && j < blocksB.length) {
-      const similarity = compareTwoStrings(blockA, blockB);
+      // 提取核心语义（去除 OCR 干扰）
+      const cleanA = cleanForComparison(blockA);
+      const cleanB = cleanForComparison(blockB);
+      
+      const similarity = compareTwoStrings(cleanA, cleanB);
       const anchorA = getAnchor(blockA);
       const anchorB = getAnchor(blockB);
 
-      // 核心改进：锚点优先匹配
-      // 如果两行都以相同的“第X节/条”开头，则强制对齐
       const isAnchorMatch = anchorA && anchorB && anchorA === anchorB;
+      // 用户要求：相似度超过 80% 强制对齐
+      const isStrongMatch = similarity >= threshold;
 
-      if (isAnchorMatch || similarity >= threshold) {
-        // High similarity or Anchor Match - match them
+      if (isAnchorMatch || isStrongMatch) {
         alignedA.push(blockA);
         alignedB.push(blockB);
         i++;
         j++;
       } else {
-        // Low similarity - look ahead
-        const lookAhead = 10; // 扩大搜索范围以应对目录长间距
-        let foundMatch = false;
+        // 激进搜索：在更广范围内寻找最优匹配点 (Deep Look-ahead)
+        const maxLookAhead = 30; // 显著增加搜索深度以应对目录或长合同的增减
+        let bestMatch = -1;
+        let bestSource = "";
 
-        for (let step = 1; step <= lookAhead; step++) {
-          // Check blocksB
+        for (let step = 1; step <= maxLookAhead; step++) {
+          // 在 B 中找 A 的潜在匹配
           if (j + step < blocksB.length) {
-            const nextB = blocksB[j+step];
-            const nextAnchorB = getAnchor(nextB);
-            if ((anchorA && anchorA === nextAnchorB) || compareTwoStrings(blockA, nextB) >= threshold) {
-              for (let k = 0; k < step; k++) {
-                alignedA.push("");
-                alignedB.push(blocksB[j + k]);
-              }
-              j += step;
-              foundMatch = true;
+            const nextB = cleanForComparison(blocksB[j + step]);
+            if (compareTwoStrings(cleanA, nextB) >= threshold || (anchorA && anchorA === getAnchor(blocksB[j + step]))) {
+              bestMatch = step;
+              bestSource = "B";
               break;
             }
           }
-          // Check blocksA
+          // 在 A 中找 B 的潜在匹配
           if (i + step < blocksA.length) {
-            const nextA = blocksA[i+step];
-            const nextAnchorA = getAnchor(nextA);
-            if ((anchorB && anchorB === nextAnchorA) || compareTwoStrings(nextA, blockB) >= threshold) {
-              for (let k = 0; k < step; k++) {
-                alignedA.push(blocksA[i + k]);
-                alignedB.push("");
-              }
-              i += step;
-              foundMatch = true;
+            const nextA = cleanForComparison(blocksA[i + step]);
+            if (compareTwoStrings(nextA, cleanB) >= threshold || (anchorB && anchorB === getAnchor(blocksA[i + step]))) {
+              bestMatch = step;
+              bestSource = "A";
               break;
             }
           }
         }
 
-        if (!foundMatch) {
-          // No match found in lookahead - treat as completely different lines
-          // But check which one is "shorter" or more likely to be a standalone insert
-          // For now, just step both if they exist, or one if not
-          if (i < blocksA.length && j < blocksB.length) {
-            alignedA.push(blocksA[i]);
-            alignedB.push(blocksB[j]);
-            i++;
-            j++;
-          } else if (i < blocksA.length) {
-            alignedA.push(blocksA[i]);
-            alignedB.push("");
-            i++;
+        if (bestMatch !== -1) {
+          if (bestSource === "B") {
+            for (let k = 0; k < bestMatch; k++) {
+              alignedA.push("");
+              alignedB.push(blocksB[j + k]);
+            }
+            j += bestMatch;
           } else {
-            alignedA.push("");
-            alignedB.push(blocksB[j]);
-            j++;
+            for (let k = 0; k < bestMatch; k++) {
+              alignedA.push(blocksA[i + k]);
+              alignedB.push("");
+            }
+            i += bestMatch;
           }
+        } else {
+          // 无匹配情况下的兜底策略
+          // 如果一行看起来像是一个孤儿行，则单独推进
+          alignedA.push(blockA);
+          alignedB.push(blockB);
+          i++;
+          j++;
         }
       }
     } else if (i < blocksA.length) {

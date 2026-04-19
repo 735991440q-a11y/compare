@@ -331,7 +331,7 @@ export default function App() {
                     className="grid grid-cols-2 gap-px bg-[#141414] border border-[#141414] shadow-2xl h-[600px]"
                   >
                     <div className="flex flex-col bg-white">
-                      <div className="px-4 py-2 bg-blue-50 text-blue-800 text-[10px] font-bold border-b border-[#141414]/10 uppercase">PDF 原件文本 (可在此手动校对)</div>
+                      <div className="px-4 py-2 bg-blue-50 text-blue-800 text-[10px] font-bold border-b border-[#141414]/10 uppercase">文稿 A (PDF 提取内容 / 可手动校对)</div>
                       <textarea
                         value={rawTextA}
                         onChange={(e) => setRawTextA(e.target.value)}
@@ -340,7 +340,7 @@ export default function App() {
                       />
                     </div>
                     <div className="flex flex-col bg-white">
-                      <div className="px-4 py-2 bg-emerald-50 text-emerald-800 text-[10px] font-bold border-b border-[#141414]/10 uppercase">Word 修订文本 (支持手动换行)</div>
+                      <div className="px-4 py-2 bg-emerald-50 text-emerald-800 text-[10px] font-bold border-b border-[#141414]/10 uppercase">文稿 B (Word 提取内容 / 支持手动换行)</div>
                       <textarea
                         value={rawTextB}
                         onChange={(e) => setRawTextB(e.target.value)}
@@ -373,18 +373,20 @@ export default function App() {
                         oldValue={contentA}
                         newValue={contentB}
                         splitView={true}
-                        compareMethod={DiffMethod.WORDS}
+                        leftTitle="文稿 A (PDF 侧)"
+                        rightTitle="文稿 B (Word 侧)"
+                        compareMethod={DiffMethod.CHARS}
                         styles={{
                           variables: {
                             light: {
                               diffViewerBackground: '#fff',
                               diffViewerColor: '#141414',
-                              addedBackground: '#ecfdf5',
-                              addedColor: '#047857',
-                              removedBackground: '#fef2f2',
-                              removedColor: '#dc2626',
-                              wordAddedBackground: '#34d39966',
-                              wordRemovedBackground: '#f8717166',
+                              addedBackground: '#f0fdf4',
+                              addedColor: '#15803d',
+                              removedBackground: '#fff1f2',
+                              removedColor: '#be123c',
+                              wordAddedBackground: '#86efac',
+                              wordRemovedBackground: '#fda4af',
                             }
                           },
                           contentText: {
@@ -410,8 +412,8 @@ export default function App() {
                       <FileSearch size={32} />
                     </div>
                     <div className="text-center">
-                      <p className="font-serif italic text-sm">等待文件同步</p>
-                      <p className="text-[10px] font-mono uppercase tracking-widest mt-1 italic">请上传原件和修订版文件以开始比对</p>
+                      <p className="font-serif italic text-sm">等待文档比对</p>
+                      <p className="text-[10px] font-mono uppercase tracking-widest mt-1 italic">请点击上方“解析合同比对”按钮或上传文档</p>
                     </div>
                   </motion.div>
                 )}
