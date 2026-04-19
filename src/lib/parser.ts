@@ -130,7 +130,7 @@ export async function parseImageOcr(file: File): Promise<ExtractedContent> {
 
 /**
  * Normalizes content for comparison:
- * isWord: If true, preserves more of the original layout (template mode).
+ * Cancels unnecessary line breaks and page breaks, treating both Word and PDF as paragraph flows.
  */
 export function normalizeForDiff(text: string, isWord = false): string {
   if (!text) return '';
@@ -138,60 +138,54 @@ export function normalizeForDiff(text: string, isWord = false): string {
   // 1. Initial cleanup of special characters and markers
   let processed = text
     .replace(/[\u00A0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000\ufeff]/g, ' ')
-    // 强制清除残留引导符
+    // 强制清除残留引导符 (Fix for TOC dots)
     .replace(/[\.·_~-]{3,}/g, '')
     // Fix spaces between Chinese characters
     .replace(/([\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])/g, '$1')
     .replace(/([\u4e00-\u9fa5])\s+([，。！？；：、‘’“”【】（）])/g, '$1$2')
     .replace(/([，。！？；：、‘’“”【】（）])\s+([\u4e00-\u9fa5])/g, '$1$2');
 
-  // 2. Split into raw lines for semantic merging
-  const rawLines = processed.split(/[\r\n\f]+/).map(l => l.trim()).filter(l => l.length > 0);
+  // 2. Split into raw lines then merge into semantic blocks
+  // This effectively "cancels" hard line breaks and page breaks
+  const rawLines = processed.split(/[\r\n\f\v]+/) // Included \f (form feed) for page breaks
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
   
-  // 如果是 Word，采取“标尺模式”：保留换行，不做激进合并
-  if (isWord) {
-    return rawLines.map(line => {
-      // 仍然尝试剔除行尾页码，但保留结构
-      const anchorRegex = /^(第[一二三四五六七八九十百\d]+[条章节]|[\d\.]+[\s、\.]|[一二三四五六七八九十]+[、\s])/;
-      if (anchorRegex.test(line)) {
-        return line.replace(/\s+\d+$/, '').trim();
-      }
-      return line;
-    }).join('\n');
-  }
-
-  // 如果是 PDF，维持原有的激进合并逻辑
   const semanticBlocks: string[] = [];
   let currentBlock = "";
+  const anchorRegex = /^(第[一二三四五六七八九十百\d]+[条章节]|[\d\.]+[\s、\.]|[一二三四五六七八九十]+[、\s])/;
 
   for (let i = 0; i < rawLines.length; i++) {
     let line = rawLines[i];
-    const anchorRegex = /^(第[一二三四五六七八九十百\d]+[条章节]|[\d\.]+[\s、\.]|[一二三四五六七八九十]+[、\s])/;
     const isAnchor = anchorRegex.test(line);
     
-    if (isAnchor) {
+    // 剔除目录或页眉残留的行尾孤立数字 (可能是页码)
+    if (isAnchor || isWord) {
       line = line.replace(/\s+\d+$/, '').trim();
     }
     
+    // 语义判断：如果当前块以结束标点结尾，或者下一行是新章节锚点，则断句
     const endsWithPunctuation = /[。！？；”]$/.test(currentBlock);
     
     if (isAnchor || (currentBlock && endsWithPunctuation)) {
       if (currentBlock) semanticBlocks.push(currentBlock);
       currentBlock = line;
     } else {
-      currentBlock = currentBlock ? currentBlock + line : line;
+      // 否则进行合并，取消中间的硬换行
+      currentBlock = currentBlock ? currentBlock + " " + line : line;
     }
   }
   
   if (currentBlock) semanticBlocks.push(currentBlock);
 
-  // 3. Final cleaning of merged blocks
+  // 3. Final cleaning of merged blocks: remove excess whitespace and non-content artifacts
   return semanticBlocks
     .map(block => block.replace(/\s{2,}/g, ' ').trim())
     .filter(block => {
+      // 过滤只含数字的行（页码残留）或纯符号行
       if (/^\d+$/.test(block)) return false; 
       if (/^[\.\-·_]+$/.test(block)) return false;
-      return block.length > 0;
+      return block.length > 1; // 忽略单字符噪点
     })
     .join('\n');
 }

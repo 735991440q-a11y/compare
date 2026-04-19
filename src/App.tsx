@@ -232,7 +232,7 @@ export default function App() {
         <div className="pt-8">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
             {/* Sidebar Stats */}
-            <aside className="lg:col-span-1 space-y-4">
+            <aside className="lg:col-span-1 space-y-4 lg:sticky lg:top-24 lg:self-start">
               <div className="border border-[#141414] p-4 bg-white/30 space-y-4">
                 <h3 className="font-serif italic text-xs border-b border-[#141414] pb-2 uppercase tracking-wide">系统洞察 / SYSTEM INSIGHTS</h3>
                 <div className="space-y-3">
