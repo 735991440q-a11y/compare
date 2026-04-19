@@ -7,13 +7,17 @@ import {
   Zap,
   Loader2,
   AlertCircle,
-  Database
+  Database,
+  Edit3,
+  CheckCircle2,
+  RefreshCw
 } from 'lucide-react';
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
 import { FileUploader } from './components/FileUploader';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseDocx, parsePdfOpenSource, parsePdfOcr, parseImageOcr, normalizeForDiff } from './lib/parser';
+import { alignSemanticBlocks } from './lib/diffUtils';
 
 export default function App() {
   const [fileA, setFileA] = useState<File | null>(null);
@@ -21,6 +25,10 @@ export default function App() {
   const [contentA, setContentA] = useState<string>('');
   const [contentB, setContentB] = useState<string>('');
   
+  // New states for raw editable text (before alignment)
+  const [rawTextA, setRawTextA] = useState<string>('');
+  const [rawTextB, setRawTextB] = useState<string>('');
+  const [isEditMode, setIsEditMode] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState<string>('');
   const [progress, setProgress] = useState<number>(0);
@@ -34,11 +42,11 @@ export default function App() {
     
     if (extension === 'docx') {
       const result = await parseDocx(buffer);
-      return normalizeForDiff(result.text);
+      return normalizeForDiff(result.text, true); // Word mode: preserve more layout
     } else if (extension === 'pdf') {
       // Use a slice to prevent detachment if we need to reuse the buffer for OCR
       const result = await parsePdfOpenSource(buffer.slice(0));
-      let text = normalizeForDiff(result.text);
+      let text = normalizeForDiff(result.text, false); // PDF mode: aggressive merging
       
       // Auto-fallback to OCR if it's a scanned PDF (no text found)
       if (text.length < 10) {
@@ -46,7 +54,7 @@ export default function App() {
           setStatus(`OCR Scanning: Page ${p.page} of ${p.total}...`);
           setProgress(15 + Math.floor((p.page / p.total) * 35));
         });
-        text = normalizeForDiff(ocrResult.text);
+        text = normalizeForDiff(ocrResult.text, false);
       }
       return text;
     } else if (['png', 'jpg', 'jpeg'].includes(extension || '')) {
@@ -57,33 +65,51 @@ export default function App() {
     return '';
   };
 
+  const handleManualAlign = () => {
+    setStatus('手动校正对齐中...');
+    const { alignedA, alignedB } = alignSemanticBlocks(rawTextA, rawTextB, 0.8);
+    setContentA(alignedA);
+    setContentB(alignedB);
+    setIsEditMode(false);
+    setStatus('校正成功');
+    setTimeout(() => {
+      document.getElementById('analysis-report')?.scrollIntoView({ behavior: 'smooth' });
+    }, 300);
+  };
+
   const handleCompare = async () => {
     if (!fileA || !fileB) return;
     setIsProcessing(true);
     setError(null);
     setProgress(5);
-    setStatus('Initializing secure environment...');
+    setStatus('正在初始化安全环境...');
 
     try {
       setProgress(15);
-      setStatus(`Parsing PDF: ${fileA.name}...`);
+      setStatus(`正在解析 PDF: ${fileA.name}...`);
       const textA = await extractContent(fileA);
       
       setProgress(50);
-      setStatus(`Parsing Word: ${fileB.name}...`);
+      setStatus(`正在解析 Word: ${fileB.name}...`);
       const textB = await extractContent(fileB);
 
       if (!textA && !textB) {
-        throw new Error("Could not extract any meaningful text from the provided files.");
+        throw new Error("无法从提供文件中提取有效文本。");
       }
 
       setProgress(85);
-      setStatus('Generating analysis...');
-      setContentA(textA);
-      setContentB(textB);
+      setStatus('语义对齐中...');
+      
+      setRawTextA(textA);
+      setRawTextB(textB);
+      
+      const { alignedA, alignedB } = alignSemanticBlocks(textA, textB, 0.8);
+      
+      setContentA(alignedA);
+      setContentB(alignedB);
       
       setProgress(100);
-      setStatus('Success: Report generated');
+      setStatus('成功：报告已生成');
       
       // Auto-scroll to results
       setTimeout(() => {
@@ -91,7 +117,7 @@ export default function App() {
       }, 500);
 
     } catch (err: any) {
-      setError(err.message || 'Comparison failed.');
+      setError(err.message || '比对失败。');
       console.error(err);
       setProgress(0);
     } finally {
@@ -252,17 +278,78 @@ export default function App() {
                   className="bg-red-50 border border-red-500 p-4 text-red-600 text-xs font-mono"
                 >
                   <div className="flex items-center gap-2 font-bold uppercase mb-1">
-                    <AlertCircle size={14} /> SYSTEM_HALTED
+                    <AlertCircle size={14} /> 系统异常 / SYSTEM_ERROR
                   </div>
                   {error}
                 </motion.div>
               )}
+
+              {/* 手动校阅控制区 - 移动至系统洞察下方 */}
+              {(contentA || contentB || rawTextA || rawTextB) && (
+                <div className="flex flex-col gap-2 pt-4">
+                  <h3 className="font-serif italic text-xs border-b border-[#141414] pb-2 uppercase tracking-wide">解析人工干预</h3>
+                  <button
+                    onClick={() => setIsEditMode(!isEditMode)}
+                    className={cn(
+                      "w-full px-4 py-3 text-[10px] font-bold uppercase tracking-widest border transition-all flex items-center justify-between",
+                      isEditMode 
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-lg" 
+                        : "bg-white text-[#141414] border-[#141414] hover:bg-[#141414] hover:text-white"
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                       {isEditMode ? <CheckCircle2 size={12} /> : <Edit3 size={12} />}
+                       {isEditMode ? "结束编辑" : "开始手动校阅"}
+                    </span>
+                  </button>
+                  {isEditMode && (
+                    <motion.button
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      onClick={handleManualAlign}
+                      className="w-full px-4 py-3 text-[10px] font-bold uppercase tracking-widest border border-[#141414] bg-[#141414] text-white hover:bg-[#2a2a2a] flex items-center justify-between group"
+                    >
+                      <span className="flex items-center gap-2">
+                        <RefreshCw size={12} className="group-hover:rotate-180 transition-transform duration-500" /> 
+                        同步此版本比对
+                      </span>
+                    </motion.button>
+                  )}
+                </div>
+              )}
             </aside>
 
             {/* Main Visualizer */}
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-3 space-y-4">
               <AnimatePresence mode="wait">
-                {contentA && contentB ? (
+                {isEditMode ? (
+                  <motion.div
+                    key="edit-pane"
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    className="grid grid-cols-2 gap-px bg-[#141414] border border-[#141414] shadow-2xl h-[600px]"
+                  >
+                    <div className="flex flex-col bg-white">
+                      <div className="px-4 py-2 bg-blue-50 text-blue-800 text-[10px] font-bold border-b border-[#141414]/10 uppercase">PDF 原件文本 (可在此手动校对)</div>
+                      <textarea
+                        value={rawTextA}
+                        onChange={(e) => setRawTextA(e.target.value)}
+                        className="flex-1 p-4 font-mono text-xs resize-none focus:outline-none"
+                        placeholder="PDF 提取内容..."
+                      />
+                    </div>
+                    <div className="flex flex-col bg-white">
+                      <div className="px-4 py-2 bg-emerald-50 text-emerald-800 text-[10px] font-bold border-b border-[#141414]/10 uppercase">Word 修订文本 (支持手动换行)</div>
+                      <textarea
+                        value={rawTextB}
+                        onChange={(e) => setRawTextB(e.target.value)}
+                        className="flex-1 p-4 font-mono text-xs resize-none focus:outline-none"
+                        placeholder="Word 提取内容..."
+                      />
+                    </div>
+                  </motion.div>
+                ) : contentA && contentB ? (
                   <motion.div 
                     key="results"
                     id="analysis-report"

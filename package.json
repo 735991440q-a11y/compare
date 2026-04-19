@@ -27,6 +27,7 @@
     "react": "^19.0.0",
     "react-diff-viewer-continued": "^4.2.0",
     "react-dom": "^19.0.0",
+    "string-similarity-js": "^2.1.4",
     "tailwind-merge": "^3.5.0",
     "tesseract.js": "^7.0.0",
     "vite": "^6.2.0"
